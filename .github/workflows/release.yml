@@ -69,7 +69,7 @@ jobs:
         run: yarn build
 
       - name: Publish
-        run: yarn publish
+        run: npm publish # Use NPM since npmjs OIDC requires support in package manager
         working-directory: dist
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
