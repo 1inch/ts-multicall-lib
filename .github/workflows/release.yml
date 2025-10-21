@@ -10,14 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
       - uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 20
           registry-url: 'https://registry.npmjs.org'
           scope: ${{ github.repository_owner }}
 
@@ -36,8 +36,9 @@ jobs:
         run: yarn build
 
       - name: Publish
-        # Use NPM since npmjs OIDC requires support in package manager
-        run: npm publish
+        run: |
+          npm install -g npm@11
+          npm publish
         working-directory: dist
 
   publish-to-github:
@@ -51,7 +52,7 @@ jobs:
 
       - uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 20
           registry-url: 'https://npm.pkg.github.com'
           scope: ${{ github.repository_owner }}
 
