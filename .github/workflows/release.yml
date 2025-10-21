@@ -15,7 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v3
         with:
           node-version: 18
           registry-url: 'https://registry.npmjs.org'
@@ -38,8 +38,6 @@ jobs:
       - name: Publish
         run: yarn publish
         working-directory: dist
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
   publish-to-github:
     runs-on: ubuntu-latest
@@ -50,7 +48,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v3
         with:
           node-version: 18
           registry-url: 'https://npm.pkg.github.com'
@@ -73,3 +71,5 @@ jobs:
       - name: Publish
         run: yarn publish
         working-directory: dist
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

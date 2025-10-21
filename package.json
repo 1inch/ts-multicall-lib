@@ -1,6 +1,6 @@
 {
     "name": "@1inch/multicall",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "description": "High-weight optimized call-processor",
     "repository": {
         "type": "git",
