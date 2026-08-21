@@ -18,9 +18,7 @@
         "ci-pipeline": "yarn run lint && yarn run test && yarn run typecheck",
         "set-npm-auth": "echo \"//npm.pkg.github.com/:_authToken=${NPM_AUTH_TOKEN}\" >> .npmrc",
         "create-index": "cti src -b && npx replace-in-file \"export * from './abi';\" \" \" ./src/index.ts",
-        "release": "standard-version",
-        "ai-dev-toolkit:pull": "git -C .ai-dev-toolkit pull origin main",
-        "ai-dev-toolkit:push": "git -C .ai-dev-toolkit push origin HEAD"
+        "release": "standard-version"
     },
     "dependencies": {},
     "devDependencies": {
