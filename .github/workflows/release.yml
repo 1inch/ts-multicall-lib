@@ -5,9 +5,85 @@ on:
     tags:
       - v*.*.*
   workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the version to bump (ignored when "version" is set)'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      version:
+        description: 'Exact version to release, e.g. 2.1.0 (optional)'
+        type: string
+        required: false
 
 jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version and create tag
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "Releasing existing tag v$VERSION"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="${INPUT_VERSION#v}"
+          else
+            LATEST=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
+            LATEST=${LATEST:-v0.0.0}
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+            case "$INPUT_BUMP" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+              *) echo "::error::unknown bump '$INPUT_BUMP'"; exit 1 ;;
+            esac
+            VERSION="$MAJOR.$MINOR.$PATCH"
+            echo "Latest tag $LATEST, $INPUT_BUMP bump -> $VERSION"
+          fi
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$VERSION' is not a valid semver version"
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::tag v$VERSION already exists"
+            exit 1
+          fi
+
+          if npm view "@1inch/multicall@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::@1inch/multicall@$VERSION is already published on npm"
+            exit 1
+          fi
+
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   publish-to-npm:
+    needs: resolve-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -15,6 +91,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: refs/tags/v${{ needs.resolve-version.outputs.version }}
 
       - uses: actions/setup-node@v6
         with:
@@ -22,17 +100,10 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
-      - name: Require a tag ref
-        run: |
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-            echo "::error::This workflow must run on a v*.*.* tag ref, got $GITHUB_REF"
-            exit 1
-          fi
-
       - name: Update package.json
+        env:
+          PACKAGE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          TAG_NAME=${GITHUB_REF/refs\/tags\//}
-          PACKAGE_VERSION=${TAG_NAME#v}
           echo "Updating package.json to version $PACKAGE_VERSION"
           cat <<< $(jq -r ".version=\"$PACKAGE_VERSION\"" package.json) > package.json
           cat package.json
@@ -48,6 +119,7 @@ jobs:
         working-directory: dist
 
   publish-to-github:
+    needs: resolve-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,6 +127,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: refs/tags/v${{ needs.resolve-version.outputs.version }}
 
       - uses: actions/setup-node@v6
         with:
@@ -62,17 +136,10 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           scope: ${{ github.repository_owner }}
 
-      - name: Require a tag ref
-        run: |
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-            echo "::error::This workflow must run on a v*.*.* tag ref, got $GITHUB_REF"
-            exit 1
-          fi
-
       - name: Update package.json
+        env:
+          PACKAGE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          TAG_NAME=${GITHUB_REF/refs\/tags\//}
-          PACKAGE_VERSION=${TAG_NAME#v}
           echo "Updating package.json to version $PACKAGE_VERSION"
           cat <<< $(jq -r ".version=\"$PACKAGE_VERSION\"" package.json) > package.json
           cat package.json
