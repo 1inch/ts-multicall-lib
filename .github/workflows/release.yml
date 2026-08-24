@@ -23,34 +23,46 @@ jobs:
   resolve-version:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      ref: ${{ steps.resolve.outputs.ref }}
+      create-tag: ${{ steps.resolve.outputs.create-tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Resolve version and create tag
+      - name: Resolve version
         id: resolve
         env:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_BUMP: ${{ inputs.bump }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
             echo "Releasing existing tag v$VERSION"
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            {
+              echo "version=$VERSION"
+              echo "ref=$GITHUB_REF"
+              echo "create-tag=false"
+            } >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+            echo "::error::releases can only be cut from $DEFAULT_BRANCH, got $GITHUB_REF"
+            exit 1
           fi
 
           if [[ -n "$INPUT_VERSION" ]]; then
             VERSION="${INPUT_VERSION#v}"
           else
-            LATEST=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
+            LATEST=$(git tag --list 'v*.*.*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
             LATEST=${LATEST:-v0.0.0}
             IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
             case "$INPUT_BUMP" in
@@ -60,7 +72,7 @@ jobs:
               *) echo "::error::unknown bump '$INPUT_BUMP'"; exit 1 ;;
             esac
             VERSION="$MAJOR.$MINOR.$PATCH"
-            echo "Latest tag $LATEST, $INPUT_BUMP bump -> $VERSION"
+            echo "Latest release tag $LATEST, $INPUT_BUMP bump -> $VERSION"
           fi
 
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -73,14 +85,24 @@ jobs:
             exit 1
           fi
 
-          if npm view "@1inch/multicall@$VERSION" version >/dev/null 2>&1; then
+          set +e
+          NPM_OUT=$(npm view "@1inch/multicall@$VERSION" version 2>&1)
+          NPM_RC=$?
+          set -e
+          if [[ $NPM_RC -eq 0 && -n "$NPM_OUT" ]]; then
             echo "::error::@1inch/multicall@$VERSION is already published on npm"
             exit 1
           fi
+          if [[ $NPM_RC -ne 0 ]] && ! grep -q 'E404' <<< "$NPM_OUT"; then
+            echo "::error::could not check npm for version $VERSION: $NPM_OUT"
+            exit 1
+          fi
 
-          git tag "v$VERSION"
-          git push origin "v$VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$VERSION"
+            echo "ref=$GITHUB_SHA"
+            echo "create-tag=true"
+          } >> "$GITHUB_OUTPUT"
 
   publish-to-npm:
     needs: resolve-version
@@ -92,7 +114,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: refs/tags/v${{ needs.resolve-version.outputs.version }}
+          ref: ${{ needs.resolve-version.outputs.ref }}
 
       - uses: actions/setup-node@v6
         with:
@@ -128,7 +150,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: refs/tags/v${{ needs.resolve-version.outputs.version }}
+          ref: ${{ needs.resolve-version.outputs.ref }}
 
       - uses: actions/setup-node@v6
         with:
@@ -155,3 +177,26 @@ jobs:
         working-directory: dist
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  tag-release:
+    needs:
+      - resolve-version
+      - publish-to-npm
+      - publish-to-github
+    if: needs.resolve-version.outputs.create-tag == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-version.outputs.ref }}
+
+      - name: Create tag
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
