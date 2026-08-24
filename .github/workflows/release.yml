@@ -22,6 +22,13 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
+      - name: Require a tag ref
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "::error::This workflow must run on a v*.*.* tag ref, got $GITHUB_REF"
+            exit 1
+          fi
+
       - name: Update package.json
         run: |
           TAG_NAME=${GITHUB_REF/refs\/tags\//}
@@ -54,6 +61,13 @@ jobs:
           node-version: 22
           registry-url: 'https://npm.pkg.github.com'
           scope: ${{ github.repository_owner }}
+
+      - name: Require a tag ref
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "::error::This workflow must run on a v*.*.* tag ref, got $GITHUB_REF"
+            exit 1
+          fi
 
       - name: Update package.json
         run: |
