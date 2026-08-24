@@ -4,8 +4,7 @@
     "description": "High-weight optimized call-processor",
     "repository": {
         "type": "git",
-        "url": "ssh://git@github.com:1inch/multicall.git",
-        "directory": "@1inch/multicall"
+        "url": "https://github.com/1inch/ts-multicall-lib.git"
     },
     "scripts": {
         "build": "tsc",
