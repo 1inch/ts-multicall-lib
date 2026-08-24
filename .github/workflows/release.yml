@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - v*.*.*
+  workflow_dispatch:
 
 jobs:
   publish-to-npm:
@@ -35,17 +36,8 @@ jobs:
       - name: Build
         run: yarn build
 
-      # Node 24 ships npm >= 11.5.1 (OIDC trusted publishing).
-      # setup-node writes _authToken=${NODE_AUTH_TOKEN}; an empty/dummy token
-      # makes npm skip OIDC and fail with E404. Strip it before publish.
       - name: Publish
-        run: |
-          unset NODE_AUTH_TOKEN
-          if [ -n "$NPM_CONFIG_USERCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
-            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
-          fi
-          npm --version
-          npm publish --access public
+        run: npm publish --access public
         working-directory: dist
 
   publish-to-github:
